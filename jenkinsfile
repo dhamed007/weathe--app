@@ -1,0 +1,18 @@
+pipeline {
+    agent any
+
+    stages {
+        stage('Build') {
+            steps {
+                // Your build steps here
+                sh 'docker build -t my-weather-service .'
+            }
+        }
+        stage('Deploy') {
+            steps {
+                // Your deployment steps here
+                sh 'kubectl apply -f deployment.yaml'
+            }
+        }
+    }
+}
