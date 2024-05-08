@@ -22,7 +22,6 @@ microservice/
 - **README.md**: Documentation file (this file) providing an overview of the project and its components.
 
 ## Usage
-
 ### Running Locally
 
 1. Ensure you have Python and Docker installed on your system.
@@ -44,3 +43,4 @@ This project includes a Jenkinsfile defining a CI/CD pipeline for the microservi
 Build: Building the Docker image.
 Test: Running tests on the microservice.
 Deploy: Deploying the microservice to kubernetes Cluster
+
