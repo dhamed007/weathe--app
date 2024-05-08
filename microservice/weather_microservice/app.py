@@ -11,7 +11,7 @@ from retry_requests import retry
 
 def get_coordinates(location):
 
-    #geolocator = Nominatim(user_agent="MyApp")
+    geolocator = Nominatim(user_agent="enoch.ofori7777@gmail.com")
     coordinates = geolocator.geocode(location)
     return coordinates
 
