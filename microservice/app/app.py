@@ -1,97 +1,81 @@
-import datetime
 import requests
-import string
-from flask import Flask, render_template, request, redirect, url_for
-import os
-from dotenv import load_dotenv
-load_dotenv()
+from geopy.geocoders import Nominatim
+import geocoder
+import openmeteo_requests
 
-OWM_ENDPOINT = "https://api.openweathermap.org/data/2.5/weather"
-OWM_FORECAST_ENDPOINT = "https://api.openweathermap.org/data/2.5/forecast"
-GEOCODING_API_ENDPOINT = "http://api.openweathermap.org/geo/1.0/direct"
-api_key = os.getenv("OWM_API_KEY")
-# api_key = os.environ.get("OWM_API_KEY")
-
-app = Flask(__name__)
+import requests_cache
+import pandas as pd
+from retry_requests import retry
 
 
-# Display home page and get city name entered into search form
-@app.route("/", methods=["GET", "POST"])
-def home():
-    if request.method == "POST":
-        city = request.form.get("search")
-        return redirect(url_for("get_weather", city=city))
-    return render_template("index.html")
+
+def get_coordinates(location):
+
+    geolocator = Nominatim(user_agent="MyApp")
+    coordinates = geolocator.geocode(location)
+    return coordinates
 
 
-# Display weather forecast for specific city using data from OpenWeather API
-@app.route("/<city>", methods=["GET", "POST"])
-def get_weather(city):
-    # Format city name and get current date to display on page
-    city_name = string.capwords(city)
-    today = datetime.datetime.now()
-    current_date = today.strftime("%A, %B %d")
+def get_weather(coordinates):
+    # Setup the Open-Meteo API client with cache and retry on error
+    cache_session = requests_cache.CachedSession('.cache', expire_after = 3600)
+    retry_session = retry(cache_session, retries = 5, backoff_factor = 0.2)
+    openmeteo = openmeteo_requests.Client(session = retry_session)
 
-    # Get latitude and longitude for city
-    location_params = {
-        "q": city_name,
-        "appid": api_key,
-        "limit": 3,
+    # Make sure all required weather variables are listed here
+    # The order of variables in hourly or daily is important to assign them correctly below
+    url = "https://api.open-meteo.com/v1/forecast"
+    params = {
+        "latitude": coordinates.latitude,
+        "longitude": coordinates.longitude,
+        
+    "current": ["temperature_2m", "relative_humidity_2m", "apparent_temperature", "is_day", "precipitation", "rain", "showers", "snowfall", "cloud_cover", "surface_pressure", "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m"],
+    "forecast_days": 1
     }
+    responses = openmeteo.weather_api(url, params=params)
 
-    location_response = requests.get(GEOCODING_API_ENDPOINT, params=location_params)
-    location_data = location_response.json()
+    # Process first location. Add a for-loop for multiple locations or weather models
+    response = responses[0]
+    print(f"Coordinates {response.Latitude()}°N {response.Longitude()}°E")
+    print(f"Elevation {response.Elevation()} m asl")
+    print(f"Timezone {response.Timezone()} {response.TimezoneAbbreviation()}")
+    print(f"Timezone difference to GMT+0 {response.UtcOffsetSeconds()} s")
 
-    # Prevent IndexError if user entered a city name with no coordinates by redirecting to error page
-    if not location_data:
-        return redirect(url_for("error"))
-    else:
-        lat = location_data[0]['lat']
-        lon = location_data[0]['lon']
+    # Current values. The order of variables needs to be the same as requested.
+    current = response.Current()
+    current_temperature_2m = current.Variables(0).Value()
+    current_relative_humidity_2m = current.Variables(1).Value()
+    current_apparent_temperature = current.Variables(2).Value()
+    current_is_day = current.Variables(3).Value()
+    current_precipitation = current.Variables(4).Value()
+    current_rain = current.Variables(5).Value()
+    current_showers = current.Variables(6).Value()
+    current_snowfall = current.Variables(7).Value()
+    current_cloud_cover = current.Variables(8).Value()
+    current_surface_pressure = current.Variables(9).Value()
+    current_wind_speed_10m = current.Variables(10).Value()
+    current_wind_direction_10m = current.Variables(11).Value()
+    current_wind_gusts_10m = current.Variables(12).Value()
 
-    # Get OpenWeather API data
-    weather_params = {
-        "lat": lat,
-        "lon": lon,
-        "appid": api_key,
-        "units": "metric",
-    }
-    weather_response = requests.get(OWM_ENDPOINT, weather_params)
-    weather_response.raise_for_status()
-    weather_data = weather_response.json()
-
-    # Get current weather data
-    current_temp = round(weather_data['main']['temp'])
-    current_weather = weather_data['weather'][0]['main']
-    min_temp = round(weather_data['main']['temp_min'])
-    max_temp = round(weather_data['main']['temp_max'])
-    wind_speed = weather_data['wind']['speed']
-
-    # Get five-day weather forecast data
-    forecast_response = requests.get(OWM_FORECAST_ENDPOINT, weather_params)
-    forecast_data = forecast_response.json()
-
-    # Make lists of temperature and weather description data to show user
-    five_day_temp_list = [round(item['main']['temp']) for item in forecast_data['list'] if '12:00:00' in item['dt_txt']]
-    five_day_weather_list = [item['weather'][0]['main'] for item in forecast_data['list']
-                             if '12:00:00' in item['dt_txt']]
-
-    # Get next four weekdays to show user alongside weather data
-    five_day_unformatted = [today, today + datetime.timedelta(days=1), today + datetime.timedelta(days=2),
-                            today + datetime.timedelta(days=3), today + datetime.timedelta(days=4)]
-    five_day_dates_list = [date.strftime("%a") for date in five_day_unformatted]
-
-    return render_template("city.html", city_name=city_name, current_date=current_date, current_temp=current_temp,
-                           current_weather=current_weather, min_temp=min_temp, max_temp=max_temp, wind_speed=wind_speed,
-                           five_day_temp_list=five_day_temp_list, five_day_weather_list=five_day_weather_list,
-                           five_day_dates_list=five_day_dates_list)
+    print(f"Current time {current.Time()}")
+    print(f"Current temperature_2m {current_temperature_2m}")
+    print(f"Current relative_humidity_2m {current_relative_humidity_2m}")
+    print(f"Current apparent_temperature {current_apparent_temperature}")
+    print(f"Current is_day {current_is_day}")
+    print(f"Current precipitation {current_precipitation}")
+    print(f"Current rain {current_rain}")
+    print(f"Current showers {current_showers}")
+    print(f"Current snowfall {current_snowfall}")
+    print(f"Current cloud_cover {current_cloud_cover}")
+    print(f"Current surface_pressure {current_surface_pressure}")
+    print(f"Current wind_speed_10m {current_wind_speed_10m}")
+    print(f"Current wind_direction_10m {current_wind_direction_10m}")
+    print(f"Current wind_gusts_10m {current_wind_gusts_10m}")
 
 
-# Display error page for invalid input
-@app.route("/error")
-def error():
-    return render_template("error.html")
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    location = input("Enter the location: ")
+    coordinates = get_coordinates(location)
+    get_weather(coordinates)
