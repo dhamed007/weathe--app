@@ -4,6 +4,9 @@
 cd infrastructure/terraform
 terraform init
 terraform apply --auto-approve
+aws eks update-kubeconfig --name my-eks-cluster
+kubectl config view
+
 
 # Step 2: Install Jenkins on Kubernetes
 cd ../kubernetes
